@@ -26,6 +26,9 @@
 package crowbar
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -33,31 +36,41 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"encoding/base64"
-	"crypto/hmac"
-	"crypto/sha256"
 )
 
 type ProxyConnection struct {
-	uuid		string
-	server		string
-	read_buffer	[]byte
-	read_mutex	sync.Mutex
+	uuid        string
+	aeskey      []byte
+	server      string
+	read_buffer []byte
+	read_mutex  sync.Mutex
 }
 
 func (c *ProxyConnection) Write(b []byte) (int, error) {
 	url_args := fmt.Sprintf("?uuid=" + c.uuid)
 	post_args := url.Values{}
-	post_args.Set("data", base64.StdEncoding.EncodeToString(b))
 
-	resp, err := http.PostForm(c.server + EndpointSync + url_args, post_args)
+	//post_args.Set("data", base64.StdEncoding.EncodeToString(b))
+
+	// here, encrypt(key, b)
+	encmsg, err := EncryptAES(c.aeskey, string(b))
 	if err != nil {
 		return 0, err
 	}
+	post_args.Set("data", encmsg)
+
+	// send it
+	resp, err := http.PostForm(c.server+EndpointSync+url_args, post_args)
+	if err != nil {
+		return 0, err
+	}
+
+	// wait response from server
 	data_bytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return 0, err
 	}
+
 	defer resp.Body.Close()
 	data := string(data_bytes)
 
@@ -75,6 +88,7 @@ func (c *ProxyConnection) FillReadBuffer() error {
 	if err != nil {
 		return err
 	}
+
 	data_bytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
@@ -85,17 +99,29 @@ func (c *ProxyConnection) FillReadBuffer() error {
 	if strings.HasPrefix(data, PrefixData) {
 		data := data[len(PrefixData):]
 
-		decodeLen := base64.StdEncoding.DecodedLen(len(data))
-		bData := make([]byte, len(c.read_buffer) + decodeLen)
-		n, err := base64.StdEncoding.Decode(bData[len(c.read_buffer):], []byte(data))
+		//decodeLen := base64.StdEncoding.DecodedLen(len(data))
+		//bData := make([]byte, len(c.read_buffer)+decodeLen)
+		//n, err := base64.StdEncoding.Decode(bData[len(c.read_buffer):], []byte(data))
+		//if err != nil {
+		//	return err
+		//}
+		//bData = bData[:len(c.read_buffer)+n]
+
+		// decrypt(key, bData)
+		decmsg, err := DecryptAES(c.aeskey, data)
 		if err != nil {
 			return err
 		}
-		bData = bData[:len(c.read_buffer)+n]
+
+		l := len(decmsg)
+		bData := make([]byte, l)
+		copy(bData, decmsg)
+
 		c.read_buffer = bData
 	} else {
 		return errors.New("Could not read from server")
 	}
+
 	return nil
 }
 
@@ -111,7 +137,7 @@ func (c *ProxyConnection) Read(b []byte) (n int, err error) {
 	}
 	// Return local buffer
 	count := len(b)
-	if count > len(c.read_buffer){
+	if count > len(c.read_buffer) {
 		count = len(c.read_buffer)
 	}
 	copy(b, c.read_buffer[:count])
@@ -125,7 +151,7 @@ func Connect(server, username, password, remote string) (*ProxyConnection, error
 	if strings.HasSuffix(server, "/") {
 		server = server[:len(server)-1]
 	}
-	conn := ProxyConnection{server: server}
+	conn := ProxyConnection{server: server, aeskey: InitKeyAES(password)}
 
 	args := fmt.Sprintf("?username=%s", username)
 	resp, err := http.Get(conn.server + EndpointAuth + args)

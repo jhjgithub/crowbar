@@ -36,7 +36,6 @@ import (
 	"strconv"
 
 	"github.com/pborman/uuid"
-
 	"github.com/q3k/crowbar"
 )
 
@@ -115,7 +114,9 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newWorker := worker{remote: remote, commandChannel: commandChannel, responseChannel: responseChannel, uuid: workerUuid}
+	passwd := user.GetPassword()
+	newWorker := worker{remote: remote, commandChannel: commandChannel, responseChannel: responseChannel, uuid: workerUuid,
+		aeskey: crowbar.InitKeyAES(passwd)}
 	workerMap[workerUuid] = newWorker
 
 	crowbar.WriteHTTPOK(w, workerUuid)
@@ -130,9 +131,16 @@ func syncHandler(w http.ResponseWriter, r *http.Request) {
 			r.ParseForm()
 			if b64_parts, ok := r.Form["data"]; ok {
 				b64 := b64_parts[0]
-				decodeLen := base64.StdEncoding.DecodedLen(len(b64))
-				data := make([]byte, decodeLen)
-				n, err := base64.StdEncoding.Decode(data, []byte(b64))
+
+				//decodeLen := base64.StdEncoding.DecodedLen(len(b64))
+				//data := make([]byte, decodeLen)
+				//n, err := base64.StdEncoding.Decode(data, []byte(b64))
+
+				// decrypt(key, data)
+				decmsg, err := crowbar.DecryptAES(worker.aeskey, b64)
+				data := []byte(decmsg)
+				n := len(data)
+
 				if err != nil {
 					crowbar.WriteHTTPError(w, "Could not decode B64.")
 				} else {
@@ -146,7 +154,7 @@ func syncHandler(w http.ResponseWriter, r *http.Request) {
 			response := <-worker.responseChannel
 			switch response.response {
 			case response_data:
-				crowbar.WriteHTTPData(w, response.extra_byte)
+				crowbar.WriteEncryptedHTTPData(w, worker.aeskey, response.extra_byte)
 			case response_quit:
 				crowbar.WriteHTTPQuit(w, response.extra_string)
 			}
@@ -160,6 +168,7 @@ func main() {
 	var listen = flag.String("listen", "0.0.0.0:8080", "Address to bind HTTP server to")
 	var userfile = flag.String("userfile", "/etc/crowbard.conf", "Path of user config file")
 	flag.Parse()
+
 	loadUsersFromFile(*userfile)
 	fmt.Fprintf(os.Stderr, "Server starting on %s...\n", *listen)
 	http.HandleFunc(crowbar.EndpointConnect, connectHandler)

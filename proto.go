@@ -26,9 +26,9 @@
 package crowbar
 
 import (
-    "fmt"
-    "net/http"
-    "encoding/base64"
+	"encoding/base64"
+	"fmt"
+	"net/http"
 )
 
 const PrefixError string = "ERROR:"
@@ -37,21 +37,31 @@ const PrefixData string = "DATA:"
 const PrefixQuit string = "QUIT:"
 
 func WriteHTTPError(w http.ResponseWriter, message string) {
-    body := fmt.Sprintf("%s%s", PrefixError, message)
-    http.Error(w, body, http.StatusInternalServerError)
+	body := fmt.Sprintf("%s%s", PrefixError, message)
+	http.Error(w, body, http.StatusInternalServerError)
 }
 
 func WriteHTTPOK(w http.ResponseWriter, data string) {
-    fmt.Fprintf(w, "%s%s", PrefixOK, data)
+	fmt.Fprintf(w, "%s%s", PrefixOK, data)
 }
 
 func WriteHTTPData(w http.ResponseWriter, data []byte) {
-    data_encoded := base64.StdEncoding.EncodeToString(data)
-    fmt.Fprintf(w, "%s%s", PrefixData, data_encoded)
+	data_encoded := base64.StdEncoding.EncodeToString(data)
+	fmt.Fprintf(w, "%s%s", PrefixData, data_encoded)
+}
+
+func WriteEncryptedHTTPData(w http.ResponseWriter, aeskey []byte, data []byte) {
+	// encrypt(key, data)
+	data_encoded, err := EncryptAES(aeskey, string(data))
+	if err != nil {
+		return
+	}
+
+	fmt.Fprintf(w, "%s%s", PrefixData, data_encoded)
 }
 
 func WriteHTTPQuit(w http.ResponseWriter, data string) {
-    fmt.Fprintf(w, "%s%s", PrefixQuit, data)
+	fmt.Fprintf(w, "%s%s", PrefixQuit, data)
 }
 
 const EndpointConnect string = "/connect/"

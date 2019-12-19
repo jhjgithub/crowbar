@@ -55,6 +55,7 @@ func workerQuit(responseChannel chan workerResponse, extra string) {
 type worker struct {
 	remote          net.Conn
 	uuid            string
+	aeskey          []byte
 	commandChannel  chan workerCommand
 	responseChannel chan workerResponse
 }

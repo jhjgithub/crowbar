@@ -26,21 +26,22 @@
 package main
 
 import (
-	"os"
-	"fmt"
 	"bufio"
-	"strings"
-	"crypto/sha256"
 	"crypto/hmac"
+	"crypto/sha256"
+	"fmt"
+	"os"
+	"strings"
 )
 
 type localUser struct {
-	username	string
-	password	string
+	username string
+	password string
 }
 
 type User interface {
 	Authenticate(nonce []byte, hmac []byte) bool
+	GetPassword() string
 }
 
 func (u localUser) Authenticate(nonce []byte, givenMac []byte) bool {
@@ -50,12 +51,34 @@ func (u localUser) Authenticate(nonce []byte, givenMac []byte) bool {
 	return hmac.Equal(expectedMac, givenMac)
 }
 
+func (u localUser) GetPassword() string {
+	return u.password
+}
+
 var userMap = map[string]User{}
 
 func UserGet(username string) (User, bool) {
 	val, ok := userMap[username]
+
 	return val, ok
 }
+
+/*
+func UserGetPassword(username string) (string, bool) {
+	val, ok := userMap[username]
+
+	if !ok {
+		return "", false
+	}
+
+	if lu, ok1 := val.(localUser); ok1 {
+		return lu.password, ok1
+
+	}
+
+	return "", false
+}
+*/
 
 func loadUsersFromFile(filename string) {
 	file, err := os.Open(filename)
